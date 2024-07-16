@@ -21,7 +21,7 @@ type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
 }
 
-func (db *DB) loadDB() (DBStructure, error) {
+func (db *DB) LoadDB() (DBStructure, error) {
 	dbStruct := DBStructure{}
 	data, err := os.ReadFile(db.path)
 	if err != nil {
@@ -65,7 +65,7 @@ func (db *DB) ensureDB() error {
 	return nil
 }
 
-func (db *DB) writeToDB(data DBStructure) error {
+func (db *DB) WriteToDB(data DBStructure) error {
   encodedData, err := json.Marshal(data.Chirps)
   if err != nil {
 	return err

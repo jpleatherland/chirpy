@@ -2,15 +2,22 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
+
 	"github.com/jpleatherland/chirpy/internal/database"
-	"html/template"
 )
 
 func main() {
 	server := http.NewServeMux()
+	db, err := database.ConnectToDB("./database.json")
+	if err != nil {
+		panic(err)
+	}
+	db.LoadDB()
+	log.Print(db)
 	log.Print("Listening...")
 	apiConf := apiConfig{}
 	server.Handle("/app/*", apiConf.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("./cmd/chirpy/")))))

@@ -7,11 +7,6 @@ import (
 	"sync"
 )
 
-type Chirp struct {
-	id   int
-	body string
-}
-
 type DB struct {
 	path string
 	mux  *sync.RWMutex
@@ -19,9 +14,22 @@ type DB struct {
 
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
+	Users  map[int]User  `json:"users"`
 }
 
-func (db *DB) LoadDB() (DBStructure, error) {
+func ConnectToDB(dbPath string) (*DB, error) {
+	database := DB{
+		path: dbPath,
+		mux:  new(sync.RWMutex),
+	}
+	err := database.ensureDB()
+	if err != nil {
+		return nil, err
+	}
+	return &database, nil
+}
+
+func (db *DB) loadDB() (DBStructure, error) {
 	dbStruct := DBStructure{}
 	data, err := os.ReadFile(db.path)
 	if err != nil {
@@ -36,17 +44,11 @@ func (db *DB) LoadDB() (DBStructure, error) {
 	return dbStruct, nil
 }
 
-func ConnectToDB(dbPath string) (*DB, error) {
-	database := DB{path: dbPath}
-	err := database.ensureDB()
-	if err != nil {
-		return nil, err
-	}
-	return &database, nil
-}
-
 func (db *DB) ensureDB() error {
-	dbStruct := DBStructure{}
+	dbStruct := DBStructure{
+		Chirps: make(map[int]Chirp),
+		Users:  make(map[int]User),
+	}
 	existingDB, err := os.Open(db.path)
 	if err != nil {
 		newDB, err := os.Create(db.path)
@@ -65,18 +67,63 @@ func (db *DB) ensureDB() error {
 	return nil
 }
 
-func (db *DB) WriteToDB(data DBStructure) error {
-  encodedData, err := json.Marshal(data.Chirps)
-  if err != nil {
-	return err
-  }
-  err = os.WriteFile(db.path, encodedData, 0666)
-  if err != nil {
-	return err
-  }
-  return nil
+func (db *DB) writeChirpToDB(data string) (Chirp, error) {
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return Chirp{}, err
+	}
+
+	newID := len(dbStructure.Chirps) + 1
+	newChirp := Chirp{
+		ID:   newID,
+		Body: data,
+	}
+
+	dbStructure.Chirps[newID] = newChirp
+
+	err = db.writeDB(dbStructure)
+	if err != nil {
+		return Chirp{}, err
+	}
+	return newChirp, err
 }
 
-// come into main, create a db which is ensured to exist at the path and have a basic structure
-// then load the structure to get the data to a var
-// when need to write pass structure to the db method
+func (db *DB) writeUserToDB(data string) (User, error) {
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	newID := len(dbStructure.Users) + 1
+	newUser := User{
+		ID:    newID,
+		Email: data,
+	}
+
+	dbStructure.Users[newID] = newUser
+
+	err = db.writeDB(dbStructure)
+	if err != nil {
+		return User{}, err
+	}
+	return newUser, err
+}
+
+func (db *DB) writeDB(dbStructure DBStructure) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	file, err := os.Create(db.path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(&dbStructure)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

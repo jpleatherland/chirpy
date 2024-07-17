@@ -16,14 +16,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	db.LoadDB()
-	log.Print(db)
 	log.Print("Listening...")
 	apiConf := apiConfig{}
 	server.Handle("/app/*", apiConf.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("./cmd/chirpy/")))))
+
 	server.HandleFunc("GET /api/healthz", healthCheck)
 	server.HandleFunc("GET /api/metrics", apiConf.metrics)
-	server.HandleFunc("POST /api/validate_chirp", validateChirp)
+
+	server.HandleFunc("GET /api/chirps", db.ReadChirps)
+	server.HandleFunc("GET /api/chirps/{id}", db.ReadChirps)
+	server.HandleFunc("POST /api/chirps", db.CreateChirp)
+
+	server.HandleFunc("POST /api/users", db.CreateUser)
+
 	server.HandleFunc("/api/reset", apiConf.resetMetrics)
 	server.HandleFunc("GET /admin/metrics", apiConf.adminMetrics)
 	http.ListenAndServe(":8080", server)

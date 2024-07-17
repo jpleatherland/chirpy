@@ -2,9 +2,11 @@ package database
 
 import (
 	"encoding/json"
+	"golang.org/x/crypto/bcrypt"
 	"fmt"
 	"os"
 	"sync"
+	"errors"
 )
 
 type DB struct {
@@ -14,7 +16,7 @@ type DB struct {
 
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
-	Users  map[int]User  `json:"users"`
+	Users  map[string]User  `json:"users"`
 }
 
 func ConnectToDB(dbPath string) (*DB, error) {
@@ -47,7 +49,7 @@ func (db *DB) loadDB() (DBStructure, error) {
 func (db *DB) ensureDB() error {
 	dbStruct := DBStructure{
 		Chirps: make(map[int]Chirp),
-		Users:  make(map[int]User),
+		Users:  make(map[string]User),
 	}
 	existingDB, err := os.Open(db.path)
 	if err != nil {
@@ -88,19 +90,29 @@ func (db *DB) writeChirpToDB(data string) (Chirp, error) {
 	return newChirp, err
 }
 
-func (db *DB) writeUserToDB(data string) (User, error) {
+func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 	dbStructure, err := db.loadDB()
 	if err != nil {
 		return User{}, err
 	}
 
+	_, exists := dbStructure.Users[data.Email]
+	if exists {
+		return User{}, errors.New("user already exists")
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(data.Password), 4)
+	if err != nil {
+		return User{}, errors.New("unable to securely store password")
+	}
 	newID := len(dbStructure.Users) + 1
 	newUser := User{
 		ID:    newID,
-		Email: data,
+		Email: data.Email,
+		Password: hashedPassword,
 	}
 
-	dbStructure.Users[newID] = newUser
+	dbStructure.Users[newUser.Email] = newUser
 
 	err = db.writeDB(dbStructure)
 	if err != nil {

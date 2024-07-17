@@ -6,18 +6,28 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/jpleatherland/chirpy/internal/database"
+    "github.com/joho/godotenv"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	jwt := os.Getenv("JWT_SECRET")
 	server := http.NewServeMux()
 	db, err := database.ConnectToDB("./database.json")
 	if err != nil {
 		panic(err)
 	}
 	log.Print("Listening...")
-	apiConf := apiConfig{}
+	apiConf := apiConfig{
+		jwtSecret:jwt,
+	}
 	server.Handle("/app/*", apiConf.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("./cmd/chirpy/")))))
 
 	server.HandleFunc("GET /api/healthz", healthCheck)
@@ -28,6 +38,7 @@ func main() {
 	server.HandleFunc("POST /api/chirps", db.CreateChirp)
 
 	server.HandleFunc("POST /api/users", db.CreateUser)
+	server.HandleFunc("POST /api/login", db.Login)
 
 	server.HandleFunc("/api/reset", apiConf.resetMetrics)
 	server.HandleFunc("GET /admin/metrics", apiConf.adminMetrics)
@@ -43,6 +54,7 @@ func healthCheck(rw http.ResponseWriter, req *http.Request) {
 
 type apiConfig struct {
 	fileserverHits int
+	jwtSecret string
 }
 
 func (apiConf *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {

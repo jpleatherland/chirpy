@@ -12,6 +12,7 @@ import (
 type DB struct {
 	path string
 	mux  *sync.RWMutex
+	jwtSecret string
 }
 
 type DBStructure struct {
@@ -19,10 +20,11 @@ type DBStructure struct {
 	Users  map[string]User  `json:"users"`
 }
 
-func ConnectToDB(dbPath string) (*DB, error) {
+func ConnectToDB(dbPath string, jwt string) (*DB, error) {
 	database := DB{
 		path: dbPath,
 		mux:  new(sync.RWMutex),
+		jwtSecret: jwt,
 	}
 	err := database.ensureDB()
 	if err != nil {

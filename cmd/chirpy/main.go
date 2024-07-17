@@ -10,7 +10,6 @@ import (
 
 	"github.com/jpleatherland/chirpy/internal/database"
     "github.com/joho/godotenv"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 func main() {
@@ -20,14 +19,14 @@ func main() {
 	}
 	jwt := os.Getenv("JWT_SECRET")
 	server := http.NewServeMux()
-	db, err := database.ConnectToDB("./database.json")
+	apiConf := apiConfig{
+		jwtSecret:jwt,
+	}
+	db, err := database.ConnectToDB("./database.json", apiConf.jwtSecret)
 	if err != nil {
 		panic(err)
 	}
 	log.Print("Listening...")
-	apiConf := apiConfig{
-		jwtSecret:jwt,
-	}
 	server.Handle("/app/*", apiConf.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("./cmd/chirpy/")))))
 
 	server.HandleFunc("GET /api/healthz", healthCheck)

@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
@@ -73,11 +74,21 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "incorrect password", http.StatusUnauthorized)
 		return
 	}
-	jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+	expiryTime := 24 * time.Hour 
+	if payload.ExpireTime != 0 {
+		expiryTime = time.Duration(payload.ExpireTime) * time.Hour
+	} 
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer: "chirpy",
 		IssuedAt: jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiryTime)),
+		Subject: strconv.Itoa(user.ID),
 	})
-	userJSON := UserToJson{ID: user.ID, Email: user.Email}
+	signedToken, err := newToken.SignedString([]byte(db.jwtSecret))
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("unable to sign token: %v", err), http.StatusUnauthorized)
+	}
+	userJSON := UserToJson{ID: user.ID, Email: user.Email, Token: signedToken}
 	responseUser, err := json.Marshal(userJSON)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)

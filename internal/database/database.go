@@ -2,28 +2,29 @@ package database
 
 import (
 	"encoding/json"
-	"golang.org/x/crypto/bcrypt"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
-	"errors"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
-	path string
-	mux  *sync.RWMutex
+	path      string
+	mux       *sync.RWMutex
 	jwtSecret string
 }
 
 type DBStructure struct {
-	Chirps map[int]Chirp `json:"chirps"`
-	Users  map[string]User  `json:"users"`
+	Chirps map[int]Chirp   `json:"chirps"`
+	Users  map[string]User `json:"users"`
 }
 
 func ConnectToDB(dbPath string, jwt string) (*DB, error) {
 	database := DB{
-		path: dbPath,
-		mux:  new(sync.RWMutex),
+		path:      dbPath,
+		mux:       new(sync.RWMutex),
 		jwtSecret: jwt,
 	}
 	err := database.ensureDB()
@@ -67,6 +68,17 @@ func (db *DB) ensureDB() error {
 		newDB.Write(initialWrite)
 		return nil
 	}
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	if dbStructure.Chirps == nil {
+		dbStructure.Chirps = make(map[int]Chirp)
+	}
+	if dbStructure.Users == nil {
+		dbStructure.Users = make(map[string]User)
+	}
+	db.writeDB(dbStructure)
 	existingDB.Close()
 	return nil
 }
@@ -109,8 +121,8 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 	}
 	newID := len(dbStructure.Users) + 1
 	newUser := User{
-		ID:    newID,
-		Email: data.Email,
+		ID:       newID,
+		Email:    data.Email,
 		Password: hashedPassword,
 	}
 

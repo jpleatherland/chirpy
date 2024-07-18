@@ -39,7 +39,11 @@ func (db *DB) CreateUser(rw http.ResponseWriter, req *http.Request) {
 	}
 	user, err := db.writeUserToDB(payload)
 	if err != nil {
-		http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
+		if err.Error() == "user already exists" {
+			http.Error(rw, "user already exists", http.StatusConflict)
+		} else {
+			http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
+		}
 	}
 	userJSON := UserToJson{ID: user.ID, Email: user.Email}
 	responseUser, err := json.Marshal(userJSON)
@@ -74,15 +78,15 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "incorrect password", http.StatusUnauthorized)
 		return
 	}
-	expiryTime := 24 * time.Hour 
+	expiryTime := 24 * time.Hour
 	if payload.ExpireTime != 0 {
 		expiryTime = time.Duration(payload.ExpireTime) * time.Hour
-	} 
+	}
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer: "chirpy",
-		IssuedAt: jwt.NewNumericDate(time.Now()),
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiryTime)),
-		Subject: strconv.Itoa(user.ID),
+		Subject:   strconv.Itoa(user.ID),
 	})
 	signedToken, err := newToken.SignedString([]byte(db.jwtSecret))
 	if err != nil {

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/jpleatherland/chirpy/internal/database"
-    "github.com/joho/godotenv"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 	jwt := os.Getenv("JWT_SECRET")
 	server := http.NewServeMux()
 	apiConf := apiConfig{
-		jwtSecret:jwt,
+		jwtSecret: jwt,
 	}
 	db, err := database.ConnectToDB("./database.json", apiConf.jwtSecret)
 	if err != nil {
@@ -37,6 +37,8 @@ func main() {
 	server.HandleFunc("POST /api/chirps", db.CreateChirp)
 
 	server.HandleFunc("POST /api/users", db.CreateUser)
+	server.HandleFunc("PUT /api/users", db.UpdateUser)
+
 	server.HandleFunc("POST /api/login", db.Login)
 
 	server.HandleFunc("/api/reset", apiConf.resetMetrics)
@@ -53,7 +55,7 @@ func healthCheck(rw http.ResponseWriter, req *http.Request) {
 
 type apiConfig struct {
 	fileserverHits int
-	jwtSecret string
+	jwtSecret      string
 }
 
 func (apiConf *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {

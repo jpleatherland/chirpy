@@ -2,9 +2,10 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -27,6 +28,7 @@ type userSubmission struct {
 	Email      string `json:"email"`
 	Password   string `json:"password"`
 	ExpireTime int    `json:"expires_in_seconds"`
+	Token      string `json:"token"`
 }
 
 func (db *DB) CreateUser(rw http.ResponseWriter, req *http.Request) {
@@ -80,13 +82,13 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 	}
 	expiryTime := 24 * time.Hour
 	if payload.ExpireTime != 0 {
-		expiryTime = time.Duration(payload.ExpireTime) * time.Hour
+		expiryTime = time.Duration(payload.ExpireTime) * time.Second
 	}
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "chirpy",
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiryTime)),
-		Subject:   strconv.Itoa(user.ID),
+		Subject:   user.Email,
 	})
 	signedToken, err := newToken.SignedString([]byte(db.jwtSecret))
 	if err != nil {
@@ -100,4 +102,63 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 	}
 	rw.WriteHeader(http.StatusOK)
 	rw.Write(responseUser)
+}
+
+func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	payload := userSubmission{}
+	err := decoder.Decode(&payload)
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("error reading request body: %v", err), http.StatusUnprocessableEntity)
+		return
+	}
+
+	token, err := getTokenFromHeader(req.Header, db.jwtSecret)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusUnauthorized)
+	}
+
+	userToUpdate, err := token.Claims.GetSubject()
+	if err != nil || userToUpdate != payload.Email {
+		http.Error(rw, "Unable to read token", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := db.updateDB(payload, userToUpdate)
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
+	}
+
+	userJSON := UserToJson{ID: user.ID, Email: user.Email}
+	responseUser, err := json.Marshal(userJSON)
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
+	rw.Write(responseUser)
+}
+
+func getTokenFromHeader(header http.Header, secret string) (*jwt.Token, error) {
+
+	tokenString := header.Get("Authorization")
+
+	if !strings.HasPrefix(tokenString, "Bearer ") {
+		return &jwt.Token{}, errors.New("invalid token")
+	}
+
+	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&jwt.RegisteredClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(secret), nil
+		},
+	)
+
+	if err != nil || !token.Valid {
+		return &jwt.Token{}, errors.New("invalid token")
+	}
+	return token, nil
 }

@@ -43,8 +43,7 @@ func (db *DB) loadDB() (DBStructure, error) {
 	}
 	err = json.Unmarshal(data, &dbStruct)
 	if err != nil {
-		fmt.Println(err)
-		return dbStruct, nil
+		return dbStruct, err
 	}
 	return dbStruct, nil
 }
@@ -68,18 +67,20 @@ func (db *DB) ensureDB() error {
 		newDB.Write(initialWrite)
 		return nil
 	}
+	defer existingDB.Close()
 	dbStructure, err := db.loadDB()
 	if err != nil {
-		return err
+		if dbStructure.Chirps == nil {
+			dbStructure.Chirps = make(map[int]Chirp)
+		}
+		if dbStructure.Users == nil {
+			dbStructure.Users = make(map[string]User)
+		}
+		err := db.writeDB(dbStructure)
+		if err != nil {
+			panic("unable to setup database")
+		}
 	}
-	if dbStructure.Chirps == nil {
-		dbStructure.Chirps = make(map[int]Chirp)
-	}
-	if dbStructure.Users == nil {
-		dbStructure.Users = make(map[string]User)
-	}
-	db.writeDB(dbStructure)
-	existingDB.Close()
 	return nil
 }
 
@@ -133,6 +134,34 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 		return User{}, err
 	}
 	return newUser, err
+}
+
+func (db *DB) updateDB(user userSubmission, originalEmail string) (User, error) {
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	currentUser, exists := dbStructure.Users[originalEmail]
+	if !exists {
+		return User{}, fmt.Errorf("unable to update user: %s", user.Email)
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), 4)
+	if err != nil {
+		return User{}, fmt.Errorf("unable to update user: %s", user.Email)
+	}
+	currentUser.Email = user.Email
+	currentUser.Password = hashedPassword
+
+	delete(dbStructure.Users, originalEmail)
+
+	dbStructure.Users[currentUser.Email] = currentUser
+	err = db.writeDB(dbStructure)
+	if err != nil {
+		return User{}, err
+	}
+	return currentUser, err
 }
 
 func (db *DB) writeDB(dbStructure DBStructure) error {

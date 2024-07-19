@@ -192,7 +192,10 @@ func TestLoginUser(t *testing.T) {
 		t.Errorf("Handler returned unexpected email: got %v want %v", result.ID, expectedID)
 	}
 	if result.Token == "" {
-		t.Errorf("Handler returned unexpected token: got %v expected token", result.ID)
+		t.Errorf("Handler returned unexpected token: got %v expected token", result.Token)
+	}
+	if result.RefreshToken == "" {
+		t.Errorf("Handler returned unexpected refresh token: got %v expected token", result.RefreshToken)
 	}
 }
 

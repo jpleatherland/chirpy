@@ -17,8 +17,14 @@ type DB struct {
 }
 
 type DBStructure struct {
-	Chirps map[int]Chirp   `json:"chirps"`
-	Users  map[string]User `json:"users"`
+	Chirps        map[int]Chirp   `json:"chirps"`
+	Users         map[string]User `json:"users"`
+	RefreshTokens map[string]TokenCache
+}
+
+type TokenCache struct {
+	UserId     string
+	ExpiryTime int64
 }
 
 func ConnectToDB(dbPath string, jwt string) (*DB, error) {
@@ -50,8 +56,9 @@ func (db *DB) loadDB() (DBStructure, error) {
 
 func (db *DB) ensureDB() error {
 	dbStruct := DBStructure{
-		Chirps: make(map[int]Chirp),
-		Users:  make(map[string]User),
+		Chirps:        make(map[int]Chirp),
+		Users:         make(map[string]User),
+		RefreshTokens: make(map[string]TokenCache),
 	}
 	existingDB, err := os.Open(db.path)
 	if err != nil {
@@ -75,6 +82,9 @@ func (db *DB) ensureDB() error {
 		}
 		if dbStructure.Users == nil {
 			dbStructure.Users = make(map[string]User)
+		}
+		if dbStructure.RefreshTokens == nil {
+			dbStructure.RefreshTokens = make(map[string]TokenCache)
 		}
 		err := db.writeDB(dbStructure)
 		if err != nil {
@@ -120,6 +130,7 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 	if err != nil {
 		return User{}, errors.New("unable to securely store password")
 	}
+
 	newID := len(dbStructure.Users) + 1
 	newUser := User{
 		ID:       newID,
@@ -182,3 +193,8 @@ func (db *DB) writeDB(dbStructure DBStructure) error {
 
 	return nil
 }
+
+// func (db *DB) refreshToken(rToken string) {
+// 	ahh := time.Now().Unix()
+// 	fmt.Println(ahh)
+// }

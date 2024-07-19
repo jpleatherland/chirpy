@@ -1,6 +1,8 @@
 package database
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,16 +21,16 @@ type User struct {
 }
 
 type UserToJson struct {
-	ID    int    `json:"id"`
-	Email string `json:"email"`
-	Token string `json:"token"`
+	ID           int    `json:"id"`
+	Email        string `json:"email"`
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type userSubmission struct {
-	Email      string `json:"email"`
-	Password   string `json:"password"`
-	ExpireTime int    `json:"expires_in_seconds"`
-	Token      string `json:"token"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Token    string `json:"token"`
 }
 
 func (db *DB) CreateUser(rw http.ResponseWriter, req *http.Request) {
@@ -81,9 +83,7 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	expiryTime := 24 * time.Hour
-	if payload.ExpireTime != 0 {
-		expiryTime = time.Duration(payload.ExpireTime) * time.Second
-	}
+
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "chirpy",
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -94,7 +94,34 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("unable to sign token: %v", err), http.StatusUnauthorized)
 	}
-	userJSON := UserToJson{ID: user.ID, Email: user.Email, Token: signedToken}
+
+	refreshTokenSize := 32
+	refreshTokenByte := make([]byte, refreshTokenSize)
+	_, err = rand.Read(refreshTokenByte)
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("unable to generate refresh token: %v", err), http.StatusUnauthorized)
+	}
+	refreshToken := hex.EncodeToString(refreshTokenByte)
+
+	userJSON := UserToJson{
+		ID:           user.ID,
+		Email:        user.Email,
+		Token:        signedToken,
+		RefreshToken: refreshToken,
+	}
+
+	tokenCacheEntry := TokenCache{
+		UserId:     user.Email,
+		ExpiryTime: time.Now().AddDate(0, 0, 60).Unix(),
+	}
+
+	dbStructure.RefreshTokens[refreshToken] = tokenCacheEntry
+
+	err = db.writeDB(dbStructure)
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("unable to update user refresh token: %v", err), http.StatusInternalServerError)
+	}
+
 	responseUser, err := json.Marshal(userJSON)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)

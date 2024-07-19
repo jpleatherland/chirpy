@@ -115,11 +115,12 @@ func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
 
 	token, err := getTokenFromHeader(req.Header, db.jwtSecret)
 	if err != nil {
-		http.Error(rw, err.Error(), http.StatusUnauthorized)
+		http.Error(rw, "invalid token", http.StatusUnauthorized)
+		return
 	}
 
 	userToUpdate, err := token.Claims.GetSubject()
-	if err != nil || userToUpdate != payload.Email {
+	if err != nil {
 		http.Error(rw, "Unable to read token", http.StatusUnauthorized)
 		return
 	}
@@ -127,6 +128,7 @@ func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
 	user, err := db.updateDB(payload, userToUpdate)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	userJSON := UserToJson{ID: user.ID, Email: user.Email}

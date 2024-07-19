@@ -254,6 +254,31 @@ func TestUpdateUser(t *testing.T) {
 
 }
 
+func TestUpdateMissingUser(t *testing.T) {
+	resources, err := setupTestEnvironment()
+	if err != nil {
+		t.Fatalf("failed to set up test environment: %v", err)
+	}
+	defer teardownTestEnvironment(resources)
+
+	user2 := userSubmission{
+		Email:    "test2@test.com",
+		Password: "12345",
+		Token:    "badtoken",
+	}
+
+	resp3, err := updateUser(user2, resources)
+	if err != nil {
+		t.Fatalf("attempt to update failed: %v", err)
+	}
+
+	expectedStatus := http.StatusUnauthorized
+
+	if resp3.StatusCode != expectedStatus {
+		t.Errorf("Handler returned unexpected status: got %v want %v", resp3.StatusCode, expectedStatus)
+	}
+}
+
 type TestResources struct {
 	TmpFile *os.File
 	Server  *httptest.Server
@@ -322,6 +347,8 @@ func setupTestServer(db *DB) *httptest.Server {
 	server.HandleFunc("POST /api/chirps", db.CreateChirp)
 
 	server.HandleFunc("POST /api/users", db.CreateUser)
+	server.HandleFunc("PUT /api/users", db.UpdateUser)
+
 	server.HandleFunc("POST /api/login", db.Login)
 
 	return httptest.NewServer(server)
@@ -378,6 +405,7 @@ func updateUser(user userSubmission, resources *TestResources) (*http.Response, 
 	}
 
 	// create the http request
+	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodPut, resources.Server.URL+"/api/users", bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, err
@@ -386,7 +414,6 @@ func updateUser(user userSubmission, resources *TestResources) (*http.Response, 
 	req.Header.Set("Authorization", "Bearer "+user.Token)
 
 	// post the payload
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

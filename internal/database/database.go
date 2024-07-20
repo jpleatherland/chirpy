@@ -201,7 +201,3 @@ func (db *DB) writeDB(dbStructure DBStructure) error {
 // return new token
 // probably need to get the user details to generate a new token
 // for the subject field
-// func (db *DB) refreshToken(rToken string) {
-// 	ahh := time.Now().Unix()
-// 	fmt.Println(ahh)
-// }

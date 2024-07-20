@@ -67,11 +67,13 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, fmt.Sprintf("error reading request body: %v", err), http.StatusUnprocessableEntity)
 		return
 	}
+
 	dbStructure, err := db.loadDB()
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("failed to read from db: %v", err), http.StatusInternalServerError)
 		return
 	}
+
 	user, exists := dbStructure.Users[payload.Email]
 	if !exists {
 		http.Error(rw, "user does not exist", http.StatusNotFound)
@@ -82,26 +84,16 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "incorrect password", http.StatusUnauthorized)
 		return
 	}
-	expiryTime := 24 * time.Hour
 
-	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:    "chirpy",
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiryTime)),
-		Subject:   user.Email,
-	})
-	signedToken, err := newToken.SignedString([]byte(db.jwtSecret))
+	signedToken, err := GenerateToken(user.Email, db.jwtSecret)
 	if err != nil {
-		http.Error(rw, fmt.Sprintf("unable to sign token: %v", err), http.StatusUnauthorized)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 	}
 
-	refreshTokenSize := 32
-	refreshTokenByte := make([]byte, refreshTokenSize)
-	_, err = rand.Read(refreshTokenByte)
+	refreshToken, err := GenerateRefreshToken()
 	if err != nil {
-		http.Error(rw, fmt.Sprintf("unable to generate refresh token: %v", err), http.StatusUnauthorized)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 	}
-	refreshToken := hex.EncodeToString(refreshTokenByte)
 
 	userJSON := UserToJson{
 		ID:           user.ID,
@@ -125,8 +117,8 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 	responseUser, err := json.Marshal(userJSON)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)
-		return
 	}
+
 	rw.WriteHeader(http.StatusOK)
 	rw.Write(responseUser)
 }
@@ -158,7 +150,17 @@ func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	userJSON := UserToJson{ID: user.ID, Email: user.Email}
+	signedToken, err := GenerateToken(user.Email, db.jwtSecret)
+	if err != nil {
+		http.Error(rw, "failed to generate new token but user update succeeded. Login with the new details you provided", http.StatusInternalServerError)
+	}
+
+	refreshToken, err := GenerateRefreshToken()
+	if err != nil {
+		http.Error(rw, "failed to generate new refresh token but user update succeeded. Login with the new details you provided", http.StatusInternalServerError)
+	}
+
+	userJSON := UserToJson{ID: user.ID, Email: user.Email, Token: signedToken, RefreshToken: refreshToken}
 	responseUser, err := json.Marshal(userJSON)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)
@@ -168,8 +170,101 @@ func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
 	rw.Write(responseUser)
 }
 
-func getTokenFromHeader(header http.Header, secret string) (*jwt.Token, error) {
+func (db *DB) RefreshToken(rw http.ResponseWriter, req *http.Request) {
+	rTokenString := req.Header.Get("Authorization")
+	if !strings.HasPrefix(rTokenString, "Bearer ") {
+		http.Error(rw, "invalid token", http.StatusUnauthorized)
+	}
 
+	rTokenString = strings.TrimPrefix(rTokenString, "Bearer ")
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tokenCacheEntry, exists := dbStruct.RefreshTokens[rTokenString]
+	if !exists {
+		http.Error(rw, "invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	if time.Now().Unix() > tokenCacheEntry.ExpiryTime {
+		http.Error(rw, "token expired", http.StatusUnauthorized)
+		return
+	}
+
+	signedToken, err := GenerateToken(tokenCacheEntry.UserId, db.jwtSecret)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tokenJson, err := json.Marshal(struct {
+		Token string `json:"token"`
+	}{Token: signedToken})
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rw.WriteHeader(http.StatusOK)
+	rw.Write(tokenJson)
+}
+
+func (db *DB) RevokeToken(rw http.ResponseWriter, req *http.Request) {
+	rTokenString := req.Header.Get("Authorization")
+	if !strings.HasPrefix(rTokenString, "Bearer ") {
+		http.Error(rw, "invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	rTokenString = strings.TrimPrefix(rTokenString, "Bearer ")
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, exists := dbStruct.RefreshTokens[rTokenString]
+	if !exists {
+		http.Error(rw, "token does not exist", http.StatusNotFound)
+		return
+	}
+
+	delete(dbStruct.RefreshTokens, rTokenString)
+
+	rw.WriteHeader(http.StatusNoContent)
+}
+
+func GenerateToken(userEmail string, jwtSecret string) (string, error) {
+	expiryTime := 24 * time.Hour
+
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiryTime)),
+		Subject:   userEmail,
+	})
+	signedToken, err := newToken.SignedString([]byte(jwtSecret))
+	if err != nil {
+		return "", err
+	}
+	return signedToken, nil
+}
+
+func GenerateRefreshToken() (string, error) {
+	refreshTokenSize := 32
+	refreshTokenByte := make([]byte, refreshTokenSize)
+	_, err := rand.Read(refreshTokenByte)
+	if err != nil {
+		return "", errors.New("unable to generate refresh token")
+	}
+	refreshToken := hex.EncodeToString(refreshTokenByte)
+	return refreshToken, nil
+}
+
+func getTokenFromHeader(header http.Header, secret string) (*jwt.Token, error) {
 	tokenString := header.Get("Authorization")
 
 	if !strings.HasPrefix(tokenString, "Bearer ") {

@@ -41,6 +41,8 @@ func main() {
 
 	server.HandleFunc("POST /api/login", db.Login)
 
+	server.HandleFunc("POST /api/refresh", db.RefreshToken)
+
 	server.HandleFunc("/api/reset", apiConf.resetMetrics)
 	server.HandleFunc("GET /admin/metrics", apiConf.adminMetrics)
 	http.ListenAndServe(":8080", server)

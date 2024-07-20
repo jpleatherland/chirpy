@@ -354,6 +354,8 @@ func setupTestServer(db *DB) *httptest.Server {
 
 	server.HandleFunc("POST /api/login", db.Login)
 
+	server.HandleFunc("POST /api/refresh", db.RefreshToken)
+
 	return httptest.NewServer(server)
 }
 

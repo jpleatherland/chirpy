@@ -28,9 +28,10 @@ type UserToJson struct {
 }
 
 type userSubmission struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Token    string `json:"token"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	ExpiryTime int32  `json:"expires_in_seconds"`
+	Token      string `json:"token"`
 }
 
 func (db *DB) CreateUser(rw http.ResponseWriter, req *http.Request) {
@@ -85,7 +86,7 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	signedToken, err := GenerateToken(user.Email, db.jwtSecret)
+	signedToken, err := GenerateToken(payload.Email, payload.ExpiryTime, db.jwtSecret)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 	}
@@ -150,7 +151,7 @@ func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	signedToken, err := GenerateToken(user.Email, db.jwtSecret)
+	signedToken, err := GenerateToken(payload.Email, payload.ExpiryTime, db.jwtSecret)
 	if err != nil {
 		http.Error(rw, "failed to generate new token but user update succeeded. Login with the new details you provided", http.StatusInternalServerError)
 	}
@@ -194,7 +195,7 @@ func (db *DB) RefreshToken(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	signedToken, err := GenerateToken(tokenCacheEntry.UserId, db.jwtSecret)
+	signedToken, err := GenerateToken(tokenCacheEntry.UserId, 0, db.jwtSecret)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -237,8 +238,11 @@ func (db *DB) RevokeToken(rw http.ResponseWriter, req *http.Request) {
 	rw.WriteHeader(http.StatusNoContent)
 }
 
-func GenerateToken(userEmail string, jwtSecret string) (string, error) {
+func GenerateToken(userEmail string, tokenExpiryTime int32, jwtSecret string) (string, error) {
 	expiryTime := 24 * time.Hour
+	if tokenExpiryTime > 0 {
+		expiryTime = time.Duration(tokenExpiryTime) * time.Second
+	}
 
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "chirpy",

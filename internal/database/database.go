@@ -17,8 +17,9 @@ type DB struct {
 }
 
 type DBStructure struct {
-	Chirps        map[int]Chirp   `json:"chirps"`
-	Users         map[string]User `json:"users"`
+	Chirps        map[int]Chirp  `json:"chirps"`
+	Users         map[int]User   `json:"users"`
+	UserIds       map[string]int `json:"id"`
 	RefreshTokens map[string]TokenCache
 }
 
@@ -57,7 +58,7 @@ func (db *DB) loadDB() (DBStructure, error) {
 func (db *DB) ensureDB() error {
 	dbStruct := DBStructure{
 		Chirps:        make(map[int]Chirp),
-		Users:         make(map[string]User),
+		Users:         make(map[int]User),
 		RefreshTokens: make(map[string]TokenCache),
 	}
 	existingDB, err := os.Open(db.path)
@@ -81,7 +82,7 @@ func (db *DB) ensureDB() error {
 			dbStructure.Chirps = make(map[int]Chirp)
 		}
 		if dbStructure.Users == nil {
-			dbStructure.Users = make(map[string]User)
+			dbStructure.Users = make(map[int]User)
 		}
 		if dbStructure.RefreshTokens == nil {
 			dbStructure.RefreshTokens = make(map[string]TokenCache)
@@ -121,9 +122,10 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 		return User{}, err
 	}
 
-	_, exists := dbStructure.Users[data.Email]
-	if exists {
-		return User{}, errors.New("user already exists")
+	for _, userId := range dbStructure.Users {
+		if userId.Email == data.Email {
+			return User{}, errors.New("user already exists")
+		}
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(data.Password), 4)
@@ -138,7 +140,7 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 		Password: hashedPassword,
 	}
 
-	dbStructure.Users[newUser.Email] = newUser
+	dbStructure.Users[newID] = newUser
 
 	err = db.writeDB(dbStructure)
 	if err != nil {
@@ -147,16 +149,13 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 	return newUser, err
 }
 
-func (db *DB) updateDB(user userSubmission, originalEmail string) (User, error) {
+func (db *DB) updateDB(user userSubmission, userId int) (User, error) {
 	dbStructure, err := db.loadDB()
 	if err != nil {
 		return User{}, err
 	}
 
-	currentUser, exists := dbStructure.Users[originalEmail]
-	if !exists {
-		return User{}, fmt.Errorf("unable to update user: %s", user.Email)
-	}
+	currentUser := dbStructure.Users[userId]
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), 4)
 	if err != nil {
@@ -165,9 +164,7 @@ func (db *DB) updateDB(user userSubmission, originalEmail string) (User, error) 
 	currentUser.Email = user.Email
 	currentUser.Password = hashedPassword
 
-	delete(dbStructure.Users, originalEmail)
-
-	dbStructure.Users[currentUser.Email] = currentUser
+	dbStructure.Users[currentUser.ID] = currentUser
 	err = db.writeDB(dbStructure)
 	if err != nil {
 		return User{}, err

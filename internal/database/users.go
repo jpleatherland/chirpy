@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,18 +76,26 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	user, exists := dbStructure.Users[payload.Email]
-	if !exists {
-		http.Error(rw, "user does not exist", http.StatusNotFound)
-		return
+	user := User{}
+
+	for _, userEntry := range dbStructure.Users {
+		if userEntry.Email == payload.Email {
+			user = userEntry
+			break
+		}
 	}
+
+	if user.Email == "" {
+		http.Error(rw, "user does not exist", http.StatusNotFound)
+	}
+
 	err = bcrypt.CompareHashAndPassword(user.Password, []byte(payload.Password))
 	if err != nil {
 		http.Error(rw, "incorrect password", http.StatusUnauthorized)
 		return
 	}
 
-	signedToken, err := GenerateToken(payload.Email, payload.ExpiryTime, db.jwtSecret)
+	signedToken, err := GenerateToken(strconv.Itoa(user.ID), payload.ExpiryTime, db.jwtSecret)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 	}
@@ -104,7 +113,7 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	tokenCacheEntry := TokenCache{
-		UserId:     user.Email,
+		UserId:     strconv.Itoa(user.ID),
 		ExpiryTime: time.Now().AddDate(0, 0, 60).Unix(),
 	}
 
@@ -134,34 +143,31 @@ func (db *DB) UpdateUser(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	token, err := getTokenFromHeader(req.Header, db.jwtSecret)
+
 	if err != nil {
 		http.Error(rw, "invalid token", http.StatusUnauthorized)
 		return
 	}
 
-	userToUpdate, err := token.Claims.GetSubject()
+	userId, err := token.Claims.GetSubject()
 	if err != nil {
-		http.Error(rw, "Unable to read token", http.StatusUnauthorized)
+		http.Error(rw, "unable to read token", http.StatusInternalServerError)
 		return
 	}
 
-	user, err := db.updateDB(payload, userToUpdate)
+	userIdInt, err := strconv.Atoi(userId)
+	if err != nil {
+		http.Error(rw, "unable to get user id", http.StatusInternalServerError)
+		return
+	}
+
+	user, err := db.updateDB(payload, userIdInt)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	signedToken, err := GenerateToken(payload.Email, payload.ExpiryTime, db.jwtSecret)
-	if err != nil {
-		http.Error(rw, "failed to generate new token but user update succeeded. Login with the new details you provided", http.StatusInternalServerError)
-	}
-
-	refreshToken, err := GenerateRefreshToken()
-	if err != nil {
-		http.Error(rw, "failed to generate new refresh token but user update succeeded. Login with the new details you provided", http.StatusInternalServerError)
-	}
-
-	userJSON := UserToJson{ID: user.ID, Email: user.Email, Token: signedToken, RefreshToken: refreshToken}
+	userJSON := UserToJson{ID: user.ID, Email: user.Email}
 	responseUser, err := json.Marshal(userJSON)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)
@@ -234,6 +240,12 @@ func (db *DB) RevokeToken(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	delete(dbStruct.RefreshTokens, rTokenString)
+
+	err = db.writeDB(dbStruct)
+	if err != nil {
+		http.Error(rw, "unable to update database", http.StatusInternalServerError)
+		return
+	}
 
 	rw.WriteHeader(http.StatusNoContent)
 }

@@ -35,6 +35,7 @@ func main() {
 	server.HandleFunc("GET /api/chirps", db.ReadChirps)
 	server.HandleFunc("GET /api/chirps/{id}", db.ReadChirps)
 	server.HandleFunc("POST /api/chirps", db.CreateChirp)
+	server.HandleFunc("DELETE /api/chirps/{id}", db.DeleteChirps)
 
 	server.HandleFunc("POST /api/users", db.CreateUser)
 	server.HandleFunc("PUT /api/users", db.UpdateUser)

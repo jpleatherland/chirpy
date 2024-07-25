@@ -23,7 +23,25 @@ func (db *DB) CreateChirp(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	cleanedInput := cleanInput(payload.Body)
-	chirp, err := db.writeChirpToDB(cleanedInput)
+	token, err := getTokenFromHeader(req.Header, db.jwtSecret)
+
+	if err != nil {
+		http.Error(rw, "invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	userId, err := token.Claims.GetSubject()
+	if err != nil {
+		http.Error(rw, "unable to read token", http.StatusInternalServerError)
+		return
+	}
+
+	userIdInt, err := strconv.Atoi(userId)
+	if err != nil {
+		http.Error(rw, "unable to get user id", http.StatusInternalServerError)
+		return
+	}
+	chirp, err := db.writeChirpToDB(cleanedInput, userIdInt)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
 	}
@@ -80,6 +98,58 @@ func (db *DB) ReadChirps(rw http.ResponseWriter, req *http.Request) {
 	rw.Write(chirpsJSON)
 }
 
+func (db *DB) DeleteChirps(rw http.ResponseWriter, req *http.Request) {
+	dbRead, err := db.loadDB()
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("error reading from database: %v", err), http.StatusInternalServerError)
+		return
+	}
+	token, err := getTokenFromHeader(req.Header, db.jwtSecret)
+
+	if err != nil {
+		http.Error(rw, "invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	userId, err := token.Claims.GetSubject()
+	if err != nil {
+		http.Error(rw, "unable to read token", http.StatusInternalServerError)
+		return
+	}
+
+	userIdInt, err := strconv.Atoi(userId)
+	if err != nil {
+		http.Error(rw, "unable to get user id", http.StatusInternalServerError)
+		return
+	}
+
+	chirpIdToDelete, err := strconv.Atoi(req.PathValue("id"))
+	if err != nil {
+		http.Error(rw, "unable to set chirp id", http.StatusBadRequest)
+		return
+	}
+
+	chirp, exists := dbRead.Chirps[chirpIdToDelete]
+	if !exists {
+		http.Error(rw, fmt.Sprintf("unable to find chirp with id: %d", chirpIdToDelete), http.StatusNotFound)
+		return
+	}
+
+	if chirp.Author_ID != userIdInt {
+		http.Error(rw, "unable to delete another users chirp", http.StatusForbidden)
+		return
+	}
+
+	delete(dbRead.Chirps, chirpIdToDelete)
+	err = db.writeDB(dbRead)
+	if err != nil {
+		http.Error(rw, "something went wrong", http.StatusInternalServerError)
+		return
+	}
+	rw.WriteHeader(http.StatusNoContent)
+
+}
+
 func cleanInput(s string) string {
 	disallowed_words := []string{"kerfuffle", "sharbert", "fornax"}
 	splitInput := strings.Split(s, " ")
@@ -95,6 +165,7 @@ func cleanInput(s string) string {
 type Chirp struct {
 	ID   int    `json:"id"`
 	Body string `json:"body"`
+	Author_ID int `json:"author_id"`
 }
 
 type chirpSubmission struct {

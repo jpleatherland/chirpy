@@ -95,7 +95,7 @@ func (db *DB) ensureDB() error {
 	return nil
 }
 
-func (db *DB) writeChirpToDB(data string) (Chirp, error) {
+func (db *DB) writeChirpToDB(data string, userId int) (Chirp, error) {
 	dbStructure, err := db.loadDB()
 	if err != nil {
 		return Chirp{}, err
@@ -105,6 +105,7 @@ func (db *DB) writeChirpToDB(data string) (Chirp, error) {
 	newChirp := Chirp{
 		ID:   newID,
 		Body: data,
+		Author_ID: userId,
 	}
 
 	dbStructure.Chirps[newID] = newChirp

@@ -16,16 +16,18 @@ import (
 )
 
 type User struct {
-	ID       int    `json:"id"`
-	Email    string `json:"email"`
-	Password []byte
+	ID            int    `json:"id"`
+	Email         string `json:"email"`
+	Is_Chirpy_Red bool   `json:"is_chirpy_red"`
+	Password      []byte
 }
 
 type UserToJson struct {
-	ID           int    `json:"id"`
-	Email        string `json:"email"`
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
+	ID            int    `json:"id"`
+	Email         string `json:"email"`
+	Token         string `json:"token"`
+	RefreshToken  string `json:"refresh_token"`
+	Is_Chirpy_Red bool   `json:"is_chirpy_red"`
 }
 
 type userSubmission struct {
@@ -51,7 +53,7 @@ func (db *DB) CreateUser(rw http.ResponseWriter, req *http.Request) {
 			http.Error(rw, fmt.Sprintf("failed to write to db: %v", err), http.StatusInternalServerError)
 		}
 	}
-	userJSON := UserToJson{ID: user.ID, Email: user.Email}
+	userJSON := UserToJson{ID: user.ID, Email: user.Email, Is_Chirpy_Red: false}
 	responseUser, err := json.Marshal(userJSON)
 	if err != nil {
 		http.Error(rw, fmt.Sprintf("error writing response: %v", err), http.StatusInternalServerError)
@@ -110,6 +112,7 @@ func (db *DB) Login(rw http.ResponseWriter, req *http.Request) {
 		Email:        user.Email,
 		Token:        signedToken,
 		RefreshToken: refreshToken,
+		Is_Chirpy_Red: user.Is_Chirpy_Red,
 	}
 
 	tokenCacheEntry := TokenCache{

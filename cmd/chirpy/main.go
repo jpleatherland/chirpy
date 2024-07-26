@@ -19,10 +19,11 @@ func main() {
 	}
 	jwt := os.Getenv("JWT_SECRET")
 	server := http.NewServeMux()
+	db, err := database.ConnectToDB("./database.json", jwt)
 	apiConf := apiConfig{
 		jwtSecret: jwt,
+		db:        db,
 	}
-	db, err := database.ConnectToDB("./database.json", apiConf.jwtSecret)
 	if err != nil {
 		panic(err)
 	}
@@ -46,6 +47,8 @@ func main() {
 
 	server.HandleFunc("POST /api/revoke", db.RevokeToken)
 
+	server.HandleFunc("POST /api/polka/webhooks", apiConf.upgradeUser)
+
 	server.HandleFunc("/api/reset", apiConf.resetMetrics)
 	server.HandleFunc("GET /admin/metrics", apiConf.adminMetrics)
 	http.ListenAndServe(":8080", server)
@@ -61,6 +64,7 @@ func healthCheck(rw http.ResponseWriter, req *http.Request) {
 type apiConfig struct {
 	fileserverHits int
 	jwtSecret      string
+	db             *database.DB
 }
 
 func (apiConf *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {

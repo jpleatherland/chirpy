@@ -139,6 +139,7 @@ func (db *DB) writeUserToDB(data userSubmission) (User, error) {
 		ID:       newID,
 		Email:    data.Email,
 		Password: hashedPassword,
+		Is_Chirpy_Red: false,
 	}
 
 	dbStructure.Users[newID] = newUser
@@ -173,6 +174,27 @@ func (db *DB) updateDB(user userSubmission, userId int) (User, error) {
 	return currentUser, err
 }
 
+func (db *DB) UpgradeUser(userId int) error {
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	currentUser, exists := dbStructure.Users[userId]
+	if !exists {
+		return errors.New("user does not exist")
+	}
+
+	currentUser.Is_Chirpy_Red = true
+
+	dbStructure.Users[currentUser.ID] = currentUser
+	err = db.writeDB(dbStructure)
+	if err != nil {
+		return err
+	}
+	return nil 
+}
+
 func (db *DB) writeDB(dbStructure DBStructure) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
@@ -192,10 +214,3 @@ func (db *DB) writeDB(dbStructure DBStructure) error {
 	return nil
 }
 
-// implement refresh.
-// Take refresh token from auth header
-// check against token cache
-// if exists and not expired
-// return new token
-// probably need to get the user details to generate a new token
-// for the subject field

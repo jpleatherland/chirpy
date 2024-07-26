@@ -85,8 +85,34 @@ func (db *DB) ReadChirps(rw http.ResponseWriter, req *http.Request) {
 	for _, chirp := range dbRead.Chirps {
 		chirps = append(chirps, chirp)
 	}
+
+	author_id := req.URL.Query().Get("author_id")
+	var author_int int
+	if author_id != "" {
+		author_int, err = strconv.Atoi(author_id)
+		if err != nil {
+			http.Error(rw, fmt.Sprintf("error getting author_id: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+	if author_id != "" {
+		var author_slice []Chirp
+		for _, chirp := range chirps {
+			if chirp.Author_ID == author_int {
+				author_slice = append(author_slice, chirp)
+			}
+		}
+		chirps = author_slice
+	}
+
+	sort_order := req.URL.Query().Get("sort")
+
 	sort.Slice(chirps, func(i, j int) bool {
-		return chirps[i].ID < chirps[j].ID
+		if sort_order == "desc" {
+			return chirps[i].ID > chirps[j].ID
+		} else {
+			return chirps[i].ID < chirps[j].ID
+		}
 	})
 
 	chirpsJSON, err := json.Marshal(chirps)
@@ -163,9 +189,9 @@ func cleanInput(s string) string {
 }
 
 type Chirp struct {
-	ID   int    `json:"id"`
-	Body string `json:"body"`
-	Author_ID int `json:"author_id"`
+	ID        int    `json:"id"`
+	Body      string `json:"body"`
+	Author_ID int    `json:"author_id"`
 }
 
 type chirpSubmission struct {

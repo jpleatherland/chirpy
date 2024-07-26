@@ -18,10 +18,12 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 	jwt := os.Getenv("JWT_SECRET")
+	polka := os.Getenv("POLKA_KEY")
 	server := http.NewServeMux()
 	db, err := database.ConnectToDB("./database.json", jwt)
 	apiConf := apiConfig{
 		jwtSecret: jwt,
+		polkaKey: polka,
 		db:        db,
 	}
 	if err != nil {
@@ -64,6 +66,7 @@ func healthCheck(rw http.ResponseWriter, req *http.Request) {
 type apiConfig struct {
 	fileserverHits int
 	jwtSecret      string
+	polkaKey       string
 	db             *database.DB
 }
 

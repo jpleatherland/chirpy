@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type polkaSubmission struct {
@@ -12,6 +13,12 @@ type polkaSubmission struct {
 }
 
 func (cfg *apiConfig) upgradeUser(rw http.ResponseWriter, req *http.Request) {
+	authHeader := req.Header.Get("Authorization")
+	if authHeader == "" || strings.TrimPrefix(authHeader, "ApiKey ") != cfg.polkaKey {
+		rw.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	decoder := json.NewDecoder(req.Body)
 	payload := polkaSubmission{}
 	err := decoder.Decode(&payload)
